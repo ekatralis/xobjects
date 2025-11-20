@@ -9,13 +9,14 @@ import os
 import sysconfig
 import uuid
 from pathlib import Path
-from typing import Callable, Dict, List, Sequence, Tuple
+from typing import Callable, Dict, List, Sequence, Tuple, Optional, Literal
 import weakref
 
 from .general import _print
 
 import numpy as np
 import scipy as sp
+import scipy.sparse
 
 _forbid_compile = False
 _suppress_warnings = False
@@ -637,6 +638,33 @@ class ContextCpu(XContext):
         except AttributeError:
             num_threads = 1
         return FFTCpu(data, axes, threads=num_threads)
+    
+    def factorized_sparse_solver(self, 
+                                 A: scipy.sparse.csc_matrix, 
+                                 n_batches: int = 0,
+                                 force_solver: Optional[
+                                                Literal["scipySLU", 
+                                                        "PyKLU"]
+                                                        ] = None,
+                                 solverKwargs: dict = None
+                                 ):
+        if solverKwargs is None:
+            solverKwargs = {}
+        if 'permc_spec' not in solverKwargs:
+            solverKwargs = solverKwargs | {"permc_spec":"MMD_AT_PLUS_A"}
+        if force_solver is None or force_solver == "scipySLU":
+            if A.shape[0]*n_batches < 10**5:
+                import warnings
+                warnings.warn("For small matrices, using PyKLU " 
+                              "can provide improved performance")
+            solver = scipy.sparse.linalg.splu(A.tocsc(),**solverKwargs)
+        elif force_solver == "PyKLU":
+            import PyKLU.klu as PyKLU
+            solver = PyKLU.Klu(A.tocsc())
+        else:
+            raise ValueError("Unrecognized CPU Sparse solver. Available options: "
+                             "scipySLU, PyKLU")
+        return solver
 
     @property
     def kernels(self):

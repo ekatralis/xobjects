@@ -399,6 +399,10 @@ class XContext(ABC):
     def plan_FFT(self, data, axes):
         "return fft"
 
+    @abstractmethod
+    def factorized_sparse_solver(self, A, n_batches, solverKwargs):
+        "return sparse solver with SuperLU-like interface"
+
 
 class XBuffer(ABC):
     def __init__(

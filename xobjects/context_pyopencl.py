@@ -7,6 +7,7 @@ import logging
 
 import numpy as np
 from typing import List, Dict, Tuple
+from scipy.sparse import csr_matrix
 
 from .context import (
     ModuleNotAvailable,
@@ -334,6 +335,15 @@ class ContextPyopencl(XContext):
             plan.itransform(data2)
         """
         return FFTPyopencl(self, data, axes, wait_on_call)
+    
+    def factorized_sparse_solver(self, 
+                                 A: csr_matrix, 
+                                 n_batches: int = 0,
+                                 force_solver: str = None,
+                                 solverKwargs: dict = None
+                                 ):
+        raise NotImplementedError("No sparse solver is currently available "
+                                  "for PyOpenCL context")
 
     @property
     def kernels(self):

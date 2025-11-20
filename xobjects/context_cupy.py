@@ -4,7 +4,7 @@
 # ########################################### #
 
 import logging
-from typing import Dict, List, Tuple
+from typing import Literal, Optional, Dict, List, Tuple
 
 import numpy as np
 
@@ -31,6 +31,8 @@ try:
     import cupyx.scipy.signal
     import cupyx.scipy.special
     import cupyx.scipy.stats
+    import cupyx.scipy.sparse
+    from cupyx import cusparse
     from cupyx.scipy import fftpack as cufftp
 
     _enabled = True
@@ -571,6 +573,57 @@ class ContextCupy(XContext):
             plan.itransform(data2)
         """
         return FFTCupy(self, data, axes)
+    
+    def factorized_sparse_solver(self, 
+                                 A: cupyx.scipy.sparse.csr_matrix, 
+                                 n_batches: int = 0,
+                                 force_solver: Optional[
+                                                Literal["cuDSS", 
+                                                        "CachedSLU", 
+                                                        "cupySLU"]
+                                                        ] = None,
+                                 solverKwargs: dict = None
+                                 ):
+        if solverKwargs is None:
+            solverKwargs = {}
+        if force_solver is not None and force_solver != "cuDSS":
+            if 'permc_spec' not in solverKwargs:
+                solverKwargs = solverKwargs | {"permc_spec":"MMD_AT_PLUS_A"}
+        if force_solver is None:
+            import warnings
+            try:
+                from .SparseSolvers.CUDA.cuDSSLU import DirectSolverSuperLU
+                solver = DirectSolverSuperLU(A, n_batches = n_batches, **solverKwargs)
+            except (ModuleNotFoundError, RuntimeError) as e:
+                warnings.warn("cuDSS not available. " 
+                              "Falling back to Cached-SuperLU (spsm) "
+                              f"Encountered Error: {e}")
+                if 'permc_spec' not in solverKwargs:
+                    solverKwargs = solverKwargs | {"permc_spec":"MMD_AT_PLUS_A"}
+                try:
+                    if cusparse.check_availability('csrsm2'):
+                        raise RuntimeError("csrsm2 is avaiable. "
+                                           "cupy SuperLU performs better "
+                                           "than Cached-SuperLU (spsm)")
+                    from .SparseSolvers.CUDA.luLU import luLU
+                    solver = luLU(A, n_batches = n_batches, **solverKwargs)
+                except RuntimeError as e:
+                    warnings.warn("Cached-SuperLU (spsm) solver failed. " 
+                                  "Falling back to cupy SuperLU. "
+                                  f"Error encountered: {e}")
+                    solver = cupyx.scipy.sparse.linalg.splu(A, **solverKwargs)
+        elif force_solver == "cuDSS":
+            from .SparseSolvers.CUDA.cuDSSLU import DirectSolverSuperLU
+            solver = DirectSolverSuperLU(A, n_batches = n_batches, **solverKwargs)
+        elif force_solver == "CachedSLU":
+            from .SparseSolvers.CUDA.luLU import luLU
+            solver = luLU(A, n_batches = n_batches, **solverKwargs)
+        elif force_solver == "cupySLU":
+            solver = cupyx.scipy.sparse.linalg.splu(A, **solverKwargs)
+        else:
+            raise ValueError("Unrecognized GPU Sparse solver. Available options: "
+                             "cuDSS, CachedSLU, cupySLU")
+        return solver
 
     @property
     def kernels(self):
