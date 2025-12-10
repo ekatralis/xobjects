@@ -77,11 +77,19 @@ cpu_tests = [
 
 cupy_tests = []
 try:
-    cupy_tests = [
-        ("cuDSS",     xo.ContextCupy()),
-        ("CachedSLU", xo.ContextCupy()),
-        ("cupySLU",   xo.ContextCupy()),
-    ]
+    import cupy as cp
+
+    if cp.cuda.runtime.is_hip:
+        cupy_tests = [
+            ("CachedSLU", xo.ContextCupy()),
+            ("cupySLU",   xo.ContextCupy()),
+        ]
+    else:
+        cupy_tests = [
+            ("cuDSS",     xo.ContextCupy()),
+            ("CachedSLU", xo.ContextCupy()),
+            ("cupySLU",   xo.ContextCupy()),
+        ]
 except ModuleNotAvailableError:
     warnings.warn("!!!ContextCupy unavailable. "
                   "Skipping tests for Cupy Solvers!!!")
