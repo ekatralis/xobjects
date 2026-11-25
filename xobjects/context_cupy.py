@@ -399,7 +399,8 @@ class ContextCupy(XContext):
     ``xobjects.settings.cuda_fast_compile`` controls whether NVRTC fast compile
     tuning is enabled. By default it is ``True``, so CUDA kernels built with
     NVRTC >= 12.9 use ``--Ofast-compile=min`` to reduce compilation time and
-    memory usage, at the cost of some runtime performance. Set
+    memory usage of the NVVM front end, at the cost of some runtime
+    performance. The ptxas back end still runs with full optimisation. Set
     ``xobjects.settings.cuda_fast_compile = False``, or equivalently the
     environment variable ``XSUITE_CUDA_FAST_COMPILE=0``, to disable it.
 
@@ -549,11 +550,21 @@ class ContextCupy(XContext):
                 # does not apply (and hiprtc has no --Ofast-compile).
                 pass
             elif nvrtc and nvrtc.getVersion() >= (12, 9):
-                # If supported, skip prohibitively heavy optimisations (e.g.
-                # involving cloning). This it at the expense of <20%
-                # runtime performance, but gain of a lot of compile time and memory.
+                # If supported, skip prohibitively heavy front-end
+                # optimisations (e.g. involving cloning), which saves a lot of
+                # compile time and memory.
+                #
+                # NVRTC forwards --Ofast-compile to its internal ptxas as
+                # well, where it degrades register allocation and
+                # scheduling: large tracking kernels then spill heavily and
+                # run several times slower. ptxas is cheap compared to the
+                # front end, so re-enable its full optimisation. The option
+                # is ignored when compiling to PTX.
                 if fast_compile:
-                    nvrtc_args += ("--Ofast-compile=min",)
+                    nvrtc_args += (
+                        "--Ofast-compile=min",
+                        "-Xptxas=--Ofast-compile=0",
+                    )
             elif fast_compile:
                 warnings.warn(
                     "Detected nvrtc version < 12.9, which does not support compile-time optimisation tuning. "
