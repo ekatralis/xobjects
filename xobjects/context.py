@@ -3,6 +3,7 @@
 # Copyright (c) CERN, 2021.                   #
 # ########################################### #
 
+import functools
 import logging
 import os
 import weakref
@@ -467,6 +468,19 @@ class XContext(ABC):
     @abstractmethod
     def zeros(self, *args, **kwargs):
         "return arr"
+
+    def fuse(self, func):
+        """Bind an elementwise function to the context.
+
+        Args:
+            func: function ``func(nplike_lib, *args)`` that only applies
+                elementwise operations of ``nplike_lib`` to its arguments.
+
+        Returns:
+            A function of ``*args``. Contexts that support it (``ContextCupy``)
+            compile it into a single kernel.
+        """
+        return functools.partial(func, self.nplike_lib)
 
     @abstractmethod
     def plan_FFT(self, data, axes):

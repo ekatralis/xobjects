@@ -3,6 +3,7 @@
 # Copyright (c) CERN, 2021.                   #
 # ########################################### #
 
+import functools
 import logging
 import os
 import shutil
@@ -30,6 +31,8 @@ from .settings import settings
 from .specialize_source import specialize_source
 
 log = logging.getLogger(__name__)
+
+_fused_functions = {}  # ContextCupy.fuse cache: compile each function only once
 
 try:
     import cupy
@@ -760,6 +763,22 @@ class ContextCupy(XContext):
         Allocates an array of zeros on the device. The function has the same
         interface of numpy.zeros"""
         return self.nplike_lib.zeros(*args, **kwargs)
+
+    def fuse(self, func):
+        """Compile an elementwise function ``func(cupy, *args)`` into a single
+        kernel with ``cupy.fuse``. See ``XContext.fuse``."""
+        if func not in _fused_functions:
+            @functools.wraps(func)
+            def bound(*args):
+                return func(cupy, *args)
+
+            fused = cupy.fuse()(bound)
+            # Python floats are weakly typed in cupy.fuse, so expressions
+            # involving only scalars lose precision: pass them as float64
+            _fused_functions[func] = lambda *args: fused(
+                *(np.float64(a) if isinstance(a, float) else a for a in args)
+            )
+        return _fused_functions[func]
 
     def plan_FFT(
         self,

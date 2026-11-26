@@ -161,3 +161,25 @@ def test_nparray_from_xoarray(test_context):
 
     assert np.all(result == expected)
     assert result.strides == (4, 8, 1)
+
+
+def _elementwise(xp, x, y, scale):
+    r = xp.sqrt(x * x + y * y)
+    return xp.where(r > 1.0, r * scale, -r), xp.sin(scale / 3.0) * x
+
+
+@for_all_test_contexts
+def test_fuse(test_context):
+    rng = np.random.default_rng(0)
+    x_host, y_host = rng.uniform(-1, 1, 1000), rng.uniform(-1, 1, 1000)
+    scale = 1.1  # a Python float: the scalar-only term sin(scale / 3) must be double precision
+
+    fused = test_context.fuse(_elementwise)
+    out = fused(
+        test_context.nparray_to_context_array(x_host),
+        test_context.nparray_to_context_array(y_host),
+        scale,
+    )
+    for res, ref in zip(out, _elementwise(np, x_host, y_host, scale)):
+        res = test_context.nparray_from_context_array(res)
+        assert np.allclose(res, ref, rtol=1e-14, atol=0)
