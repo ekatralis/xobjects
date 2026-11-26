@@ -151,6 +151,10 @@ def dtype2ctype(dtype):
     return dtype_dict[dtype.name]
 
 
+# Pointer C types by dtype, avoiding the slow dtype.name in kernel calls
+_pointer_ctypes = {np.dtype(name): ctype + "*" for name, ctype in dtype_dict.items()}
+
+
 def nplike_to_numpy(arr):
     return np.array(arr)
 
@@ -954,10 +958,11 @@ class KernelCpu:
                 return self.ffi_interface.NULL
             if hasattr(arg.atype, "_dtype"):  # it is numerical scalar
                 if hasattr(value, "dtype"):  # nparray
-                    slice_first_elem = value[tuple(value.ndim * [slice(0, 1)])]
+                    ctype = _pointer_ctypes[value.dtype]
+                    if not value.flags.c_contiguous:  # pointer to the first element
+                        value = value[tuple(value.ndim * [slice(0, 1)])]
                     return self.ffi_interface.cast(
-                        dtype2ctype(value.dtype) + "*",
-                        self.ffi_interface.from_buffer(slice_first_elem.data),
+                        ctype, self.ffi_interface.from_buffer(value)
                     )
                 elif hasattr(value, "_shape"):  # xobject array
                     assert isinstance(
